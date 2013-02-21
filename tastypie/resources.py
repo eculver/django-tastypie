@@ -223,7 +223,7 @@ class Resource(object):
 
                 return response
             except (BadRequest, fields.ApiFieldError), e:
-                data = {"error": e.args[0]}
+                data = {"error": e.args[0] if getattr(e, 'args') else ''}
                 return self.error_response(request, data, response_class=http.HttpBadRequest)
             except ValidationError, e:
                 data = {"error": e.messages}
@@ -337,9 +337,10 @@ class Resource(object):
         """
         urls = self.prepend_urls()
 
-        if self.override_urls():
+        overridden_urls = self.override_urls()
+        if overridden_urls:
             warnings.warn("'override_urls' is a deprecated method & will be removed by v1.0.0. Please rename your method to ``prepend_urls``.")
-            urls += self.override_urls()
+            urls += overridden_urls
 
         urls += self.base_urls()
         urlpatterns = patterns('',
@@ -1190,13 +1191,19 @@ class Resource(object):
         if response_class is None:
             response_class = http.HttpBadRequest
 
+        desired_format = None
+
         if request:
             if request.GET.get('callback', None) is None:
-                desired_format = self.determine_format(request)
+                try:
+                    desired_format = self.determine_format(request)
+                except BadRequest:
+                    pass  # Fall through to default handler below
             else:
                 # JSONP can cause extra breakage.
                 desired_format = 'application/json'
-        else:
+
+        if not desired_format:
             desired_format = self._meta.default_format
 
         try:
